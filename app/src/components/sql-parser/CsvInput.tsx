@@ -1,12 +1,12 @@
 "use client";
 
-import type React from 'react';
+import React from 'react';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, Upload } from "lucide-react";
 
 interface CsvInputProps {
   csvUrl: string;
@@ -15,6 +15,7 @@ interface CsvInputProps {
   setCsvContentManual: (value: string) => void;
   fetchCsv: () => void;
   isLoadingCsv: boolean;
+  handleFileUpload: (file: File) => Promise<void>;
 }
 
 const CsvInput: React.FC<CsvInputProps> = ({
@@ -24,16 +25,24 @@ const CsvInput: React.FC<CsvInputProps> = ({
   setCsvContentManual,
   fetchCsv,
   isLoadingCsv,
+  handleFileUpload,
 }) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
   return (
     <Card className="w-full shadow-lg">
       <CardHeader>
-        <CardTitle className="text-xl font-semibold">CSV Data</CardTitle>
-        <CardDescription>Enter a CSV URL to fetch data, or paste CSV content directly.</CardDescription>
+        <CardTitle className="text-xl font-semibold">CSV Data Input</CardTitle>
+        <CardDescription>Load CSV data from URL, file upload, or paste directly</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="csv-url" className="font-medium">CSV File URL</Label>
+          <Label htmlFor="csv-url" className="font-medium">CSV URL</Label>
           <div className="flex items-center space-x-2">
             <Input
               id="csv-url"
@@ -44,7 +53,11 @@ const CsvInput: React.FC<CsvInputProps> = ({
               className="text-sm border-input focus:ring-ring focus:border-ring"
               disabled={isLoadingCsv}
             />
-            <Button onClick={fetchCsv} disabled={isLoadingCsv || !csvUrl} variant="secondary">
+            <Button 
+              onClick={fetchCsv} 
+              disabled={isLoadingCsv || !csvUrl} 
+              variant="secondary"
+            >
               {isLoadingCsv ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -58,21 +71,56 @@ const CsvInput: React.FC<CsvInputProps> = ({
         </div>
         
         <div className="relative">
-           <div className="absolute inset-0 flex items-center">
-             <span className="w-full border-t" />
-           </div>
-           <div className="relative flex justify-center text-xs uppercase">
-             <span className="bg-card px-2 text-muted-foreground">
-               Or
-             </span>
-           </div>
-         </div>
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">
+              Or
+            </span>
+          </div>
+        </div>
 
         <div className="space-y-2">
-          <Label htmlFor="csv-content" className="font-medium">Manual CSV Input / Fetched Content</Label>
+          <Label htmlFor="file-upload" className="font-medium">Upload CSV File</Label>
+          <div className="flex items-center space-x-2">
+            <label
+              htmlFor="file-upload"
+              className="flex flex-1 items-center justify-center rounded-md border border-dashed border-input bg-background px-4 py-6 cursor-pointer hover:bg-accent hover:text-accent-foreground"
+            >
+              <div className="flex flex-col items-center gap-1 text-center text-sm text-muted-foreground">
+                <Upload className="h-5 w-5" />
+                <span>Click to upload or drag and drop</span>
+                <span className="text-xs">CSV files only</span>
+              </div>
+              <input
+                id="file-upload"
+                type="file"
+                accept=".csv"
+                onChange={handleFileChange}
+                className="sr-only"
+                disabled={isLoadingCsv}
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">
+              Or
+            </span>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="csv-content" className="font-medium">Paste CSV Content</Label>
           <Textarea
             id="csv-content"
-            placeholder="Paste your CSV content here, or see fetched data..."
+            placeholder="Paste your CSV content here..."
             value={csvContent}
             onChange={(e) => setCsvContentManual(e.target.value)}
             rows={8}

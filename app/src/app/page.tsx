@@ -3,11 +3,17 @@
 import { useAppContext } from '@/context/AppContext';
 import SqlInput from '@/components/sql-parser/SqlInput';
 import CsvInput from '@/components/sql-parser/CsvInput';
-import LineCounter from '@/components/sql-parser/LineCounter';
+import ResultsTable from '@/components/sql-parser/ResultsTable';
 import { Separator } from '@/components/ui/separator';
 
 export default function HomePage() {
-  const { state, dispatch, fetchCsv } = useAppContext();
+  const { 
+    state, 
+    dispatch, 
+    fetchCsv, 
+    executeQuery,
+    handleFileUpload 
+  } = useAppContext();
 
   const handleSetSqlCommand = (value: string) => {
     dispatch({ type: 'SET_SQL_COMMAND', payload: value });
@@ -21,28 +27,17 @@ export default function HomePage() {
     dispatch({ type: 'SET_CSV_CONTENT_MANUAL', payload: value });
   };
 
-  const handleCalculateLineCount = () => {
-    dispatch({ type: 'CALCULATE_LINE_COUNT' });
-  };
-
   return (
     <main className="flex min-h-screen flex-col items-center justify-start p-4 md:p-8 lg:p-12 bg-background">
-      <div className="w-full max-w-3xl space-y-8">
+      <div className="w-full max-w-5xl space-y-8">
         <header className="text-center">
           <h1 className="text-4xl font-bold tracking-tight text-foreground">
-            SQL Parser
+            Browser SQL Engine
           </h1>
           <p className="mt-2 text-lg text-muted-foreground">
-            Input your SQL, fetch or paste CSV data, and analyze its content.
+            Load CSV data and execute SQL queries entirely in your browser
           </p>
         </header>
-
-        <SqlInput
-          sqlCommand={state.sqlCommand}
-          setSqlCommand={handleSetSqlCommand}
-        />
-
-        <Separator className="my-6" />
 
         <CsvInput
           csvUrl={state.csvUrl}
@@ -51,8 +46,18 @@ export default function HomePage() {
           setCsvContentManual={handleSetCsvContentManual}
           fetchCsv={fetchCsv}
           isLoadingCsv={state.isLoadingCsv}
+          handleFileUpload={handleFileUpload}
         />
-        
+
+        <Separator className="my-6" />
+
+        <SqlInput
+          sqlCommand={state.sqlCommand}
+          setSqlCommand={handleSetSqlCommand}
+          executeQuery={executeQuery}
+          isExecuting={state.isExecuting}
+        />
+
         {state.error && (
           <div className="p-3 my-2 text-sm rounded-md bg-destructive/10 text-destructive border border-destructive/30">
             <strong>Error:</strong> {state.error}
@@ -61,10 +66,10 @@ export default function HomePage() {
 
         <Separator className="my-6" />
 
-        <LineCounter
-          lineCount={state.lineCount}
-          calculateLineCount={handleCalculateLineCount}
-          hasCsvContent={!!state.csvContent.trim()}
+        <ResultsTable 
+          results={state.queryResults} 
+          columns={state.queryColumns}
+          error={state.error}
         />
       </div>
     </main>
