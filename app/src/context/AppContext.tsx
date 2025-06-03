@@ -135,70 +135,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   useEffect(() => {
     if (state.db && state.csvContent) {
-      loadDataIntoDb();
+      setTimeout(() => loadDataIntoDb(), 0);
     }
   }, [state.csvContent, state.db]);
 
   const loadDataIntoDb = async () => {
-  if (!state.db || !state.csvContent.trim()) return;
+    if (!state.db || !state.csvContent.trim()) return;
 
-  try {
-    const firstChunk: string[] = [];
-    const columns: string[] = [];
+    try {
+      let stmt: any;
+      let columns: string[] = [];
+      let tableCreated = false;
 
-    let tableCreated = false;
-    let stmt: any;
+      state.db.exec('DROP TABLE IF EXISTS data');
 
-    state.db.exec('DROP TABLE IF EXISTS data');
+      await new Promise<void>((resolve, reject) => {
+        Papa.parse(state.csvContent, {
+          header: true,
+          skipEmptyLines: true,
+          worker: true,
+          step: function (row, parser) {
+            if (!tableCreated) {
+              columns = Object.keys(row.data);
+              const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ');
+              state.db.exec(`CREATE TABLE data (${columnDefs})`);
+              stmt = state.db.prepare(`INSERT INTO data (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`);
+              tableCreated = true;
+            }
 
-    await new Promise<void>((resolve, reject) => {
-      Papa.parse(state.csvContent, {
-        header: true,
-        skipEmptyLines: true,
-        worker: true,
-        step: function (row, parser) {
-          if (!tableCreated) {
-            const headers = Object.keys(row.data);
-            headers.forEach(h => columns.push(h));
-            const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ');
-            state.db.exec(`CREATE TABLE data (${columnDefs})`);
-            stmt = state.db.prepare(`INSERT INTO data (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`);
-            tableCreated = true;
-          }
-
-          const values = columns.map(col => row.data[col]);
-          stmt.bind(values);
-          stmt.step();
-          stmt.reset();
-        },
-        complete: function () {
-          if (stmt) stmt.free();
-          resolve();
-        },
-        error: function (error) {
-          reject(error);
-        }
+            const values = columns.map(col => row.data[col]);
+            stmt.bind(values);
+            stmt.step();
+            stmt.reset();
+          },
+          complete: function () {
+            if (stmt) stmt.free();
+            resolve();
+          },
+          error: function (error) {
+            reject(error);
+          },
+          chunkSize: 1024 * 32,
+        });
       });
-    });
 
-    const tables = state.db.exec("SELECT name FROM sqlite_master WHERE type='table'");
-    console.log("Available tables:", tables);
-
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : 'Failed to load CSV data into database';
-    console.error("Error loading data:", errorMessage);
-    dispatch({ type: 'EXECUTE_QUERY_ERROR', payload: errorMessage });
-  }
-};
-
+      toast({ title: "Success", description: "CSV loaded into database." });
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load CSV data into database';
+      dispatch({ type: 'EXECUTE_QUERY_ERROR', payload: errorMessage });
+    }
+  };
 
   const fetchCsv = async () => {
     if (!state.csvUrl) {
-      toast({
-        title: "Error",
-        description: "Please enter a CSV URL.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Please enter a CSV URL.", variant: "destructive" });
       dispatch({ type: 'FETCH_CSV_ERROR', payload: 'CSV URL is required.' });
       return;
     }
@@ -207,18 +197,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const content = await fetchCsvContentService(state.csvUrl);
       dispatch({ type: 'FETCH_CSV_SUCCESS', payload: content });
-      toast({
-        title: "Success",
-        description: "CSV content fetched successfully.",
-      });
+      toast({ title: "Success", description: "CSV content fetched successfully." });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch CSV.';
       dispatch({ type: 'FETCH_CSV_ERROR', payload: errorMessage });
-      toast({
-        title: "Error Fetching CSV",
-        description: errorMessage,
-        variant: "destructive",
-      });
+      toast({ title: "Error Fetching CSV", description: errorMessage, variant: "destructive" });
     }
   };
 
@@ -231,18 +214,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         reader.readAsText(file);
       });
       dispatch({ type: 'SET_CSV_CONTENT_MANUAL', payload: content });
-      toast({
-        title: "Success",
-        description: "CSV file uploaded successfully.",
-      });
+      toast({ title: "Success", description: "CSV file uploaded successfully." });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to read file.';
       dispatch({ type: 'FETCH_CSV_ERROR', payload: errorMessage });
-      toast({
-        title: "Error Uploading File",
-        description: errorMessage,
-        variant: "destructive",
-      });
+      toast({ title: "Error Uploading File", description: errorMessage, variant: "destructive" });
     }
   };
 
@@ -259,60 +235,39 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     dispatch({ type: 'EXECUTE_QUERY_START' });
 
-    try {
-      const results = state.db.exec(state.sqlCommand);
+    setTimeout(() => {
+      try {
+        const results = state.db.exec(state.sqlCommand);
 
-      if (results.length === 0) {
-        // Si es PRAGMA u otro comando sin resultado visible
-        if (state.sqlCommand.toLowerCase().includes('pragma')) {
-          const pragma = state.db.exec('PRAGMA table_info(data);');
-          if (pragma.length > 0) {
-            dispatch({
-              type: 'EXECUTE_QUERY_SUCCESS',
-              payload: {
-                results: pragma[0].values,
-                columns: pragma[0].columns,
-              }
-            });
-            return;
-          }
+        if (results.length === 0) {
+          dispatch({ type: 'EXECUTE_QUERY_SUCCESS', payload: { results: [], columns: [] } });
+          return;
         }
 
         dispatch({
           type: 'EXECUTE_QUERY_SUCCESS',
-          payload: { results: [], columns: [] },
+          payload: {
+            results: results[0].values || [],
+            columns: results[0].columns,
+          },
         });
-        return;
+      } catch (err) {
+        let errorMessage = 'Failed to execute query';
+        if (err instanceof Error) {
+          errorMessage = err.message;
+          const lines = state.sqlCommand.split('\n');
+          const keywordMatch = err.message.match(/near \"?([A-Za-z0-9_]+)\"?/);
+          if (keywordMatch && keywordMatch[1]) {
+            const keyword = keywordMatch[1].toLowerCase();
+            const lineWithError = lines.findIndex(line => line.toLowerCase().includes(keyword));
+            if (lineWithError !== -1) {
+              errorMessage += ` (possible error at line ${lineWithError + 1}: \"${lines[lineWithError].trim()}\")`;
+            }
+          }
+        }
+        dispatch({ type: 'EXECUTE_QUERY_ERROR', payload: errorMessage });
       }
-
-      dispatch({
-        type: 'EXECUTE_QUERY_SUCCESS',
-        payload: {
-          results: results[0].values || [],
-          columns: results[0].columns,
-        },
-      });
-    } catch (err) {
-  let errorMessage = 'Failed to execute query';
-  if (err instanceof Error) {
-    errorMessage = err.message;
-
-    const lines = state.sqlCommand.split('\n');
-    const keywordMatch = err.message.match(/near "?([A-Za-z0-9_]+)"?/);
-    if (keywordMatch && keywordMatch[1]) {
-      const keyword = keywordMatch[1].toLowerCase();
-      const lineWithError = lines.findIndex(line =>
-        line.toLowerCase().includes(keyword)
-      );
-
-      if (lineWithError !== -1) {
-        errorMessage += ` (possible error at line ${lineWithError + 1}: "${lines[lineWithError].trim()}")`;
-      }
-    }
-  }
-
-  dispatch({ type: 'EXECUTE_QUERY_ERROR', payload: errorMessage });
-}
+    }, 0);
   };
 
   return (

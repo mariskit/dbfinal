@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -27,9 +27,25 @@ const CsvInput: React.FC<CsvInputProps> = ({
   isLoadingCsv,
   handleFileUpload,
 }) => {
+  const [isDragging, setIsDragging] = useState(false);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
+    if (file) handleFileUpload(file);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => setIsDragging(false);
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.name.endsWith(".csv")) {
       handleFileUpload(file);
     }
   };
@@ -41,6 +57,7 @@ const CsvInput: React.FC<CsvInputProps> = ({
         <CardDescription>Load CSV data from URL, file upload, or paste directly</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* CSV URL input */}
         <div className="space-y-2">
           <Label htmlFor="csv-url" className="font-medium">CSV URL</Label>
           <div className="flex items-center space-x-2">
@@ -69,53 +86,56 @@ const CsvInput: React.FC<CsvInputProps> = ({
             </Button>
           </div>
         </div>
-        
+
+        {/* Divider */}
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              Or
-            </span>
+            <span className="bg-card px-2 text-muted-foreground">Or</span>
           </div>
         </div>
 
+        {/* Upload with drag and drop */}
         <div className="space-y-2">
           <Label htmlFor="file-upload" className="font-medium">Upload CSV File</Label>
-          <div className="flex items-center space-x-2">
-            <label
-              htmlFor="file-upload"
-              className="flex flex-1 items-center justify-center rounded-md border border-dashed border-input bg-background px-4 py-6 cursor-pointer hover:bg-accent hover:text-accent-foreground"
-            >
-              <div className="flex flex-col items-center gap-1 text-center text-sm text-muted-foreground">
-                <Upload className="h-5 w-5" />
-                <span>Click to upload or drag and drop</span>
-                <span className="text-xs">CSV files only</span>
-              </div>
-              <input
-                id="file-upload"
-                type="file"
-                accept=".csv"
-                onChange={handleFileChange}
-                className="sr-only"
-                disabled={isLoadingCsv}
-              />
-            </label>
-          </div>
+          <label
+            htmlFor="file-upload"
+            className={`flex flex-1 items-center justify-center rounded-md border-2 border-dashed px-4 py-6 cursor-pointer transition-all
+              ${isDragging ? 'border-blue-500 bg-blue-50 text-blue-500' : 'border-input hover:bg-accent hover:text-accent-foreground'}
+            `}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            <div className="flex flex-col items-center gap-1 text-center text-sm text-muted-foreground">
+              <Upload className="h-5 w-5" />
+              <span>Click to upload or drag and drop</span>
+              <span className="text-xs">CSV files only</span>
+            </div>
+            <input
+              id="file-upload"
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              className="sr-only"
+              disabled={isLoadingCsv}
+            />
+          </label>
         </div>
 
+        {/* Divider */}
         <div className="relative">
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">
-              Or
-            </span>
+            <span className="bg-card px-2 text-muted-foreground">Or</span>
           </div>
         </div>
 
+        {/* Paste content manually */}
         <div className="space-y-2">
           <Label htmlFor="csv-content" className="font-medium">Paste CSV Content</Label>
           <Textarea
