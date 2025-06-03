@@ -59,20 +59,20 @@ const appReducer = (state: AppState, action: AppAction): AppState => {
     case 'EXECUTE_QUERY_START':
       return { ...state, isExecuting: true, error: null };
     case 'EXECUTE_QUERY_SUCCESS':
-      return { 
-        ...state, 
-        isExecuting: false, 
-        queryResults: action.payload.results, 
+      return {
+        ...state,
+        isExecuting: false,
+        queryResults: action.payload.results,
         queryColumns: action.payload.columns,
-        error: null 
+        error: null,
       };
     case 'EXECUTE_QUERY_ERROR':
-      return { 
-        ...state, 
-        isExecuting: false, 
-        queryResults: [], 
+      return {
+        ...state,
+        isExecuting: false,
+        queryResults: [],
         queryColumns: [],
-        error: action.payload 
+        error: action.payload,
       };
     case 'SET_DB':
       return { ...state, db: action.payload };
@@ -101,12 +101,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const initDb = async () => {
       try {
-        // Cargar SQL.js dinámicamente
         if (!window.SQL) {
           script = document.createElement('script');
           script.src = 'https://sql.js.org/dist/sql-wasm.js';
           script.async = true;
-          
+
           await new Promise<void>((resolve, reject) => {
             script.onload = () => resolve();
             script.onerror = () => reject(new Error('Failed to load SQL.js'));
@@ -115,7 +114,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
 
         const SQL = await window.initSqlJs({
-          locateFile: () => 'https://sql.js.org/dist/sql-wasm.wasm'
+          locateFile: () => 'https://sql.js.org/dist/sql-wasm.wasm',
         });
 
         const db = new SQL.Database();
@@ -140,43 +139,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [state.csvContent, state.db]);
 
-const loadDataIntoDb = async () => {
+  const loadDataIntoDb = async () => {
   if (!state.db || !state.csvContent.trim()) return;
 
   try {
-    const results = Papa.parse(state.csvContent, {
-      header: true,
-      skipEmptyLines: true
-    });
+    const firstChunk: string[] = [];
+    const columns: string[] = [];
 
-    if (results.errors.length > 0) {
-      throw new Error(results.errors[0].message);
-    }
-
-    if (results.data.length === 0) {
-      throw new Error('CSV file is empty or could not be parsed');
-    }
-
-    const columns = Object.keys(results.data[0] as Record<string, string>);
-    const escapedColumns = columns.map(col => `\`${col}\``); // Escapar con backticks
-
-    const columnDefs = escapedColumns.map(col => `${col} TEXT`).join(', ');
+    let tableCreated = false;
+    let stmt: any;
 
     state.db.exec('DROP TABLE IF EXISTS data');
-    state.db.exec(`CREATE TABLE data (${columnDefs})`);
 
-    const stmt = state.db.prepare(`INSERT INTO data VALUES (${columns.map(() => '?').join(', ')})`);
+    await new Promise<void>((resolve, reject) => {
+      Papa.parse(state.csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        worker: true,
+        step: function (row, parser) {
+          if (!tableCreated) {
+            const headers = Object.keys(row.data);
+            headers.forEach(h => columns.push(h));
+            const columnDefs = columns.map(col => `"${col}" TEXT`).join(', ');
+            state.db.exec(`CREATE TABLE data (${columnDefs})`);
+            stmt = state.db.prepare(`INSERT INTO data (${columns.map(c => `"${c}"`).join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`);
+            tableCreated = true;
+          }
 
-    for (const row of results.data as Record<string, string>[]) {
-      const values = columns.map(col => row[col]);
-      stmt.bind(values);
-      stmt.step();
-      stmt.reset();
-    }
+          const values = columns.map(col => row.data[col]);
+          stmt.bind(values);
+          stmt.step();
+          stmt.reset();
+        },
+        complete: function () {
+          if (stmt) stmt.free();
+          resolve();
+        },
+        error: function (error) {
+          reject(error);
+        }
+      });
+    });
 
-    stmt.free();
+    const tables = state.db.exec("SELECT name FROM sqlite_master WHERE type='table'");
+    console.log("Available tables:", tables);
+
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Failed to load CSV data into database';
+    console.error("Error loading data:", errorMessage);
     dispatch({ type: 'EXECUTE_QUERY_ERROR', payload: errorMessage });
   }
 };
@@ -192,7 +202,7 @@ const loadDataIntoDb = async () => {
       dispatch({ type: 'FETCH_CSV_ERROR', payload: 'CSV URL is required.' });
       return;
     }
-    
+
     dispatch({ type: 'FETCH_CSV_START' });
     try {
       const content = await fetchCsvContentService(state.csvUrl);
@@ -251,39 +261,70 @@ const loadDataIntoDb = async () => {
 
     try {
       const results = state.db.exec(state.sqlCommand);
-      
+
       if (results.length === 0) {
-        dispatch({ 
-          type: 'EXECUTE_QUERY_SUCCESS', 
-          payload: { results: [], columns: [] } 
+        // Si es PRAGMA u otro comando sin resultado visible
+        if (state.sqlCommand.toLowerCase().includes('pragma')) {
+          const pragma = state.db.exec('PRAGMA table_info(data);');
+          if (pragma.length > 0) {
+            dispatch({
+              type: 'EXECUTE_QUERY_SUCCESS',
+              payload: {
+                results: pragma[0].values,
+                columns: pragma[0].columns,
+              }
+            });
+            return;
+          }
+        }
+
+        dispatch({
+          type: 'EXECUTE_QUERY_SUCCESS',
+          payload: { results: [], columns: [] },
         });
         return;
       }
 
-      const columns = results[0].columns;
-      const values = results[0].values;
-
-      dispatch({ 
-        type: 'EXECUTE_QUERY_SUCCESS', 
-        payload: { 
-          results: values || [], 
-          columns 
-        } 
+      dispatch({
+        type: 'EXECUTE_QUERY_SUCCESS',
+        payload: {
+          results: results[0].values || [],
+          columns: results[0].columns,
+        },
       });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to execute query';
-      dispatch({ type: 'EXECUTE_QUERY_ERROR', payload: errorMessage });
+  let errorMessage = 'Failed to execute query';
+  if (err instanceof Error) {
+    errorMessage = err.message;
+
+    const lines = state.sqlCommand.split('\n');
+    const keywordMatch = err.message.match(/near "?([A-Za-z0-9_]+)"?/);
+    if (keywordMatch && keywordMatch[1]) {
+      const keyword = keywordMatch[1].toLowerCase();
+      const lineWithError = lines.findIndex(line =>
+        line.toLowerCase().includes(keyword)
+      );
+
+      if (lineWithError !== -1) {
+        errorMessage += ` (possible error at line ${lineWithError + 1}: "${lines[lineWithError].trim()}")`;
+      }
     }
+  }
+
+  dispatch({ type: 'EXECUTE_QUERY_ERROR', payload: errorMessage });
+}
   };
 
   return (
-    <AppContext.Provider value={{ 
-      state, 
-      dispatch, 
-      fetchCsv, 
-      executeQuery,
-      handleFileUpload 
-    }}>
+    <AppContext.Provider
+      value={{
+        state,
+        dispatch,
+        fetchCsv,
+        executeQuery,
+        handleFileUpload,
+      }}
+    >
       {children}
     </AppContext.Provider>
   );
